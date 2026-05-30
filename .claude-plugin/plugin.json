@@ -1,0 +1,6 @@
+{
+  "name": "clean-commit",
+  "description": "Human, high-scoring Conventional Commits — strips the Claude co-author trailer and enforces a perfect commit-hygiene score.",
+  "version": "0.1.0",
+  "author": { "name": "holland.nguyen" }
+}

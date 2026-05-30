@@ -1,0 +1,11 @@
+{
+  "name": "clean-commit",
+  "owner": { "name": "holland-nguyen" },
+  "plugins": [
+    {
+      "name": "clean-commit",
+      "source": "./",
+      "description": "Human, high-scoring Conventional Commits — strips the Claude co-author trailer and enforces a perfect commit-hygiene score."
+    }
+  ]
+}
