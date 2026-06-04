@@ -109,11 +109,42 @@ class TestHookIO(unittest.TestCase):
         "EOF"
     )
 
+    LOWERCASE_090 = (
+        "git commit -F - <<'EOF'\n"
+        "feat(auth): Add token refresh on session expiry\n\n"
+        "Users were logged out when their session token expired.\n"
+        "Add an automatic refresh before each authenticated request.\n"
+        "EOF"
+    )
+
     def test_passthrough_non_commit(self):
         self.assertIsNone(run_hook("ls -la"))
 
+    def test_passthrough_quoted_git_commit_mention(self):
+        # "git commit" inside a quoted string is not a real commit invocation.
+        self.assertIsNone(run_hook('echo "run git commit -m foo to save"'))
+
+    def test_compound_command_still_gated(self):
+        # A real commit after `&&` must still be scored and blocked when poor.
+        out = run_hook('cd /tmp && git commit -m "fix bug"')
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_deny_does_not_suggest_capitalizing_at_default(self):
+        # At the default 0.9 gate the capital bonus is never required, so the
+        # fix list must not tell the user to capitalize the prefix.
+        out = run_hook('git commit -m "feat(auth): Add token refresh on expiry"')
+        hso = out["hookSpecificOutput"]
+        self.assertEqual(hso["permissionDecision"], "deny")
+        reason = hso["permissionDecisionReason"].lower()
+        self.assertNotIn("uppercase", reason)
+        self.assertIn("body", reason)
+
     def test_perfect_commit_no_trailer_passes_silently(self):
         self.assertIsNone(run_hook(self.PERFECT))
+
+    def test_lowercase_complete_commit_passes_at_default(self):
+        # Standard lowercase prefix scores 0.90; the default gate (0.9) allows it.
+        self.assertIsNone(run_hook(self.LOWERCASE_090))
 
     def test_strips_trailer_and_allows(self):
         cmd = (

@@ -87,7 +87,7 @@ def analyze(message):
     score += pts
     breakdown.append({"key": "scope", "label": "scope (...)",
                       "points": pts, "got": has_scope,
-                      "fix": "add a scope, e.g. Feat(auth): ..."})
+                      "fix": "add a scope, e.g. fix(db): ..."})
 
     # Starts with capital letter
     cap = trimmed[0].isupper()

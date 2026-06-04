@@ -2,7 +2,7 @@
 """PreToolUse/Bash hook for clean-commit.
 
 On every `git commit`: strip the Claude co-author / "Generated with" trailers and
-block any message scoring below CLEAN_COMMIT_MIN_SCORE (default 1.0). Fail-open:
+block any message scoring below CLEAN_COMMIT_MIN_SCORE (default 0.9). Fail-open:
 on any error, emit nothing so the tool proceeds unchanged.
 """
 import json
@@ -21,6 +21,11 @@ GENERATED_RE = re.compile(r"generated with \[?claude code", re.IGNORECASE)
 # Full point value of each positive scoring rule, for the deny-message fix list.
 RULE_MAX = {"length": 0.25, "prefix": 0.30, "scope": 0.05,
             "capital": 0.10, "imperative": 0.10, "body": 0.20}
+
+# Match `git commit` only at a command position — start of line, or after a shell
+# separator (so `cd x && git commit` counts) — but NOT when it merely appears
+# inside a quoted string (`echo "git commit"`, a Python literal, etc.).
+_GIT_COMMIT_RE = re.compile(r"(?:^|[\n;&|(])\s*git\s+commit\b")
 
 
 def is_trailer_line(line):
@@ -86,11 +91,19 @@ def build_output(decision, reason=None, updated_command=None):
     return {"hookSpecificOutput": hso}
 
 
+# Standard lowercase Conventional Commits forgo the +0.10 "uppercase first char"
+# bonus, so a complete commit tops out at 0.90. Default the gate there.
+_DEFAULT_MIN_SCORE = "0.9"
+# Tolerance so float rounding (e.g. 0.25+0.30+0.05+0.10+0.20) can't deny a commit
+# that is exactly at the threshold.
+_EPSILON = 1e-9
+
+
 def _threshold():
     try:
-        return float(os.environ.get("CLEAN_COMMIT_MIN_SCORE", "1.0"))
+        return float(os.environ.get("CLEAN_COMMIT_MIN_SCORE", _DEFAULT_MIN_SCORE))
     except ValueError:
-        return 1.0
+        return float(_DEFAULT_MIN_SCORE)
 
 
 def main():
@@ -100,7 +113,7 @@ def main():
     except Exception:
         return  # fail-open
     command = (data.get("tool_input") or {}).get("command")
-    if not isinstance(command, str) or "git commit" not in command:
+    if not isinstance(command, str) or not _GIT_COMMIT_RE.search(command):
         return  # passthrough
 
     cleaned = strip_trailer(command)
@@ -114,8 +127,13 @@ def main():
         return
 
     score, breakdown = analyze(message)
-    if score < _threshold():
-        missing = [b for b in breakdown if not b["got"]]
+    if score < _threshold() - _EPSILON:
+        # A standard lowercase commit tops out at 0.90, so when the gate is at or
+        # below that, the +0.10 "uppercase first char" rule is never required —
+        # don't suggest capitalizing the prefix, which we deliberately avoid.
+        suppress_capital = _threshold() <= 0.90 + _EPSILON
+        missing = [b for b in breakdown if not b["got"]
+                   and not (suppress_capital and b["key"] == "capital")]
         lines = ["clean-commit: message scores %.2f (need %.2f)."
                  % (score, _threshold())]
         for b in missing:
